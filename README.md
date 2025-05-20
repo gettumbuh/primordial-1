@@ -1,13 +1,9 @@
-# Sample Hardhat Project
+# Primordial Experiment 1
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+The first primordial experiment. This experiment is a controlled experiment to test the experience, perception and the understanding of Tumbuh in a small set of users.
 
-Try running some of the following tasks:
+The primordial wallets and plant agents are not autonomous and only mimc a part of the experience users will eventually have.
 
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.ts
-```
+_The earnings from this experiment will not be realistic as there is no staking process to participate as well as defi earning strategies emloyed by the primordial plant agent._
+
+_The plant will require a different H2O token called 'Primordial water' or PH2O tokens to survive, survival conditions are not enforced on a smart contract._
