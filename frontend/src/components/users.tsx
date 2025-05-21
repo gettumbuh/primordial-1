@@ -37,7 +37,6 @@ export default function Users() {
 
   useEffect(() => {
     const API_SECRET = localStorage.getItem('primordialApiSecret')
-    console.log('API_SECRET', API_SECRET)
     if (API_SECRET) {
       setApiSecret(API_SECRET)
     }

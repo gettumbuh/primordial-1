@@ -130,6 +130,15 @@ exports.Prisma.PrimordialUsersScalarFieldEnum = {
   updatedAt: 'updatedAt'
 };
 
+exports.Prisma.SaleScalarFieldEnum = {
+  id: 'id',
+  currentPrice: 'currentPrice',
+  approvedHandle: 'approvedHandle',
+  nonce: 'nonce',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -147,7 +156,8 @@ exports.Prisma.NullsOrder = {
 
 
 exports.Prisma.ModelName = {
-  PrimordialUsers: 'PrimordialUsers'
+  PrimordialUsers: 'PrimordialUsers',
+  Sale: 'Sale'
 };
 
 /**
