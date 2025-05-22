@@ -204,4 +204,18 @@ vim .env
 npx prisma migrate dev
 
 # run server
-npm run dev
+npm run build
+pm2 start npm --name "backend" -- start
+
+# run frontend
+
+sudo fallocate -l 1G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+cd frontend
+vim .env 
+npm i
+NODE_OPTIONS="--max-old-space-size=512" npm run build
+pm2 start npm --name "frontend" -- start

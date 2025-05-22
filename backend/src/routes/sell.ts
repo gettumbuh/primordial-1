@@ -114,7 +114,7 @@ sellRouter.post(
       data: {
         currentPrice: 0,
         approvedHandle: null,
-        nonce: updatedNonce,
+        nonce: updatedNonce
       },
     })
 
@@ -123,7 +123,7 @@ sellRouter.post(
       txnHash,
       amount,
       reason: 'Transaction successful',
-      updatedNonce: nonce,
+      updatedNonce,
     })
   })
 )
