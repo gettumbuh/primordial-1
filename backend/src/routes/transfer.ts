@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { extractUSDCFromAddress } from '../walletService'
+import { extractUSDCFromAddress, sendUSDCToAddress } from '../walletService'
 import {
   asyncHandler,
   verifyApiSecret,
@@ -43,4 +43,31 @@ transferRouter.post(
   })
 )
 
+transferRouter.post(
+  '/in',
+  verifyApiSecret,
+  validateRequest(
+    Joi.object({
+      twitterHandle: Joi.string().required(),
+      amount: Joi.string().required(),
+    })
+  ),
+  asyncHandler(async (req, res) => {
+    const { twitterHandle, amount } = req.body
+
+    const user = await prisma.primordialUsers.findFirst({
+      where: {
+        twitterHandle,
+      },
+    })
+
+    if (!user) {
+      throw new Error('User not found')
+    }
+
+    const txHash = await sendUSDCToAddress(amount, user.address)
+
+    res.json({ txHash })
+  })
+)
 export default transferRouter

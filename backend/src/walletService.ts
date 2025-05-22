@@ -17,7 +17,7 @@ const primordialWallet = new ethers.Wallet(
 const l1GasOracle = new ethers.Contract(
   config.l1GasOracleAddress,
   config.l1GasOracleAbi,
-  primordialWallet,
+  primordialWallet
 )
 
 export const getWaterBalance = async (address: string) => {
@@ -53,19 +53,20 @@ export const mintToAddress = async (address: string, price: string) => {
   return tx.hash
 }
 
-export const buyFromAddress = async (
-  userPrivateKey: string,
-  amount: string,
-  price: string
-) => {
-  const userWallet = new ethers.Wallet(userPrivateKey, provider)
+interface GasEstimationResult {
+  requiredEthers: bigint
+  l1Fees: bigint
+  l1FeesWithBuffer: bigint
+  l2GasEstimate: bigint
+  l2GasEstimateWithBuffer: bigint
+}
 
-  const tokenContract = PH2O__factory.connect(config.ph2oAddress, userWallet)
-
-  const recipientAddress = primordialWallet.address
-  const transferAmount = ethers.parseUnits(amount, 18)
-
-  const populatedTransaction = await tokenContract.transfer.populateTransaction(
+async function estimateGasAndPrepareTransaction(
+  contract: PH2O,
+  recipientAddress: string,
+  transferAmount: bigint
+): Promise<GasEstimationResult> {
+  const populatedTransaction = await contract.transfer.populateTransaction(
     recipientAddress,
     transferAmount
   )
@@ -80,16 +81,12 @@ export const buyFromAddress = async (
   const serializedTransaction = serialize(unsignedTransaction)
 
   const l1Fees = await l1GasOracle.getL1Fee(serializedTransaction)
-
-  // 0.5% buffer
   const l1FeesWithBuffer = (l1Fees * BigInt(1005)) / BigInt(1000)
 
-  const l2GasEstimate = await tokenContract.transfer.estimateGas(
+  const l2GasEstimate = await contract.transfer.estimateGas(
     recipientAddress,
     transferAmount
   )
-
-  // 20% buffer
   const l2GasEstimateWithBuffer = (l2GasEstimate * BigInt(120)) / BigInt(100)
 
   const gasPrice = await provider.getFeeData()
@@ -99,16 +96,21 @@ export const buyFromAddress = async (
 
   const requiredEthers =
     l1FeesWithBuffer +
-    l2GasEstimateWithBuffer * (gasPrice.gasPrice ?? gasPrice.maxFeePerGas)
+    l2GasEstimateWithBuffer * (gasPrice.maxFeePerGas ?? gasPrice.gasPrice)
 
-  console.log('l1 fees', l1Fees)
-  console.log('l1 fees with buffer', l1FeesWithBuffer)
-  console.log('l2 gas estimate', l2GasEstimate)
-  console.log('l2 gas estimate with buffer', l2GasEstimateWithBuffer)
-  console.log('gas price', gasPrice.maxFeePerGas, gasPrice.gasPrice)
-  console.log('required ethers', requiredEthers)
+  return {
+    requiredEthers,
+    l1Fees,
+    l1FeesWithBuffer,
+    l2GasEstimate,
+    l2GasEstimateWithBuffer,
+  }
+}
 
-  // get current balance of ethers in user wallet
+async function ensureWalletHasBalance(
+  userWallet: ethers.Wallet,
+  requiredEthers: bigint
+): Promise<void> {
   const balance = await provider.getBalance(userWallet.address)
   console.log('balance', balance)
 
@@ -119,7 +121,6 @@ export const buyFromAddress = async (
     ethers.formatEther(requiredBalance)
   )
 
-  // if required balance is greater than 0, send ethers to user wallet
   if (requiredBalance > 0) {
     const tx = await primordialWallet.sendTransaction({
       to: userWallet.address,
@@ -130,6 +131,36 @@ export const buyFromAddress = async (
 
   const updatedBalance = await provider.getBalance(userWallet.address)
   console.log('updated balance', updatedBalance)
+}
+
+export const buyFromAddress = async (
+  userPrivateKey: string,
+  amount: string,
+  price: string
+) => {
+  const userWallet = new ethers.Wallet(userPrivateKey, provider)
+  const tokenContract = PH2O__factory.connect(config.ph2oAddress, userWallet)
+  const transferAmount = ethers.parseUnits(amount, 18)
+
+  const {
+    requiredEthers,
+    l1Fees,
+    l1FeesWithBuffer,
+    l2GasEstimate,
+    l2GasEstimateWithBuffer,
+  } = await estimateGasAndPrepareTransaction(
+    tokenContract,
+    primordialWallet.address,
+    transferAmount
+  )
+
+  console.log('l1 fees', l1Fees)
+  console.log('l1 fees with buffer', l1FeesWithBuffer)
+  console.log('l2 gas estimate', l2GasEstimate)
+  console.log('l2 gas estimate with buffer', l2GasEstimateWithBuffer)
+  console.log('required ethers', requiredEthers)
+
+  await ensureWalletHasBalance(userWallet, requiredEthers)
 
   // transfer tokens to primordial wallet
   const tx = await tokenContract.transfer(
@@ -138,14 +169,10 @@ export const buyFromAddress = async (
   )
   const txReceipt = await tx.wait()
   console.log('tx receipt', txReceipt)
-  // actual gas used
   const gasUsed = txReceipt?.gasUsed
   console.log('gas used', gasUsed)
 
   // send USDC from primordial wallet to user wallet
-  // reuse ph20 contract to substitute as type for usdc contract
-  // decimals of usdc is 6 instead of 18
-
   const usdcContract = PH2O__factory.connect(
     config.usdcAddress,
     primordialWallet
@@ -160,94 +187,58 @@ export const buyFromAddress = async (
   return finalTx.hash
 }
 
-
-export const extractUSDCFromAddress = async (userPrivateKey: string, amount: string, recipientAddress: string) => {
+export const extractUSDCFromAddress = async (
+  userPrivateKey: string,
+  amount: string,
+  recipientAddress: string
+) => {
   const userWallet = new ethers.Wallet(userPrivateKey, provider)
-  
-  const usdcContract = PH2O__factory.connect(
-    config.usdcAddress,
-    primordialWallet
-  )
-
+  const usdcContract = PH2O__factory.connect(config.usdcAddress, userWallet)
   const transferAmount = ethers.parseUnits(amount, 6)
 
-  const populatedTransaction = await usdcContract.transfer.populateTransaction(
+  const {
+    requiredEthers,
+    l1Fees,
+    l1FeesWithBuffer,
+    l2GasEstimate,
+    l2GasEstimateWithBuffer,
+  } = await estimateGasAndPrepareTransaction(
+    usdcContract,
     recipientAddress,
     transferAmount
   )
-  const unsignedTransaction = {
-    data: populatedTransaction.data,
-    to: populatedTransaction.to,
-    value: populatedTransaction.value,
-    gasLimit: populatedTransaction.gasLimit,
-    gasPrice: populatedTransaction.gasPrice,
-    nonce: populatedTransaction.nonce,
-  }
-  const serializedTransaction = serialize(unsignedTransaction)
-
-  const l1Fees = await l1GasOracle.getL1Fee(serializedTransaction)
-
-  // 0.5% buffer
-  const l1FeesWithBuffer = (l1Fees * BigInt(1005)) / BigInt(1000)
-
-  const l2GasEstimate = await usdcContract.transfer.estimateGas(
-    recipientAddress,
-    transferAmount
-  )
-
-  // 20% buffer
-  const l2GasEstimateWithBuffer = (l2GasEstimate * BigInt(120)) / BigInt(100)
-
-  const gasPrice = await provider.getFeeData()
-  if (!gasPrice.maxFeePerGas) {
-    throw new Error('Gas price not found')
-  }
-
-  const requiredEthers =
-    l1FeesWithBuffer +
-    l2GasEstimateWithBuffer * (gasPrice.gasPrice ?? gasPrice.maxFeePerGas)
 
   console.log('l1 fees', l1Fees)
   console.log('l1 fees with buffer', l1FeesWithBuffer)
   console.log('l2 gas estimate', l2GasEstimate)
   console.log('l2 gas estimate with buffer', l2GasEstimateWithBuffer)
-  console.log('gas price', gasPrice.maxFeePerGas, gasPrice.gasPrice)
   console.log('required ethers', requiredEthers)
 
-  // get current balance of ethers in user wallet
-  const balance = await provider.getBalance(userWallet.address)
-  console.log('balance', balance)
+  await ensureWalletHasBalance(userWallet, requiredEthers)
 
-  const requiredBalance = requiredEthers - balance
-  console.log(
-    'required balance',
-    requiredBalance,
-    ethers.formatEther(requiredBalance)
-  )
-
-  // if required balance is greater than 0, send ethers to user wallet
-  if (requiredBalance > 0) {
-    const tx = await primordialWallet.sendTransaction({
-      to: userWallet.address,
-      value: requiredBalance,
-    })
-    await tx.wait()
-  }
-
-  const updatedBalance = await provider.getBalance(userWallet.address)
-  console.log('updated balance', updatedBalance)
-
-  // transfer tokens to primordial wallet
-  const tx = await usdcContract.transfer(
-    recipientAddress,
-    transferAmount
-  )
+  const tx = await usdcContract.transfer(recipientAddress, transferAmount)
   const txReceipt = await tx.wait()
   console.log('tx receipt', txReceipt)
-  // actual gas used
   const gasUsed = txReceipt?.gasUsed
   console.log('gas used', gasUsed)
 
   return tx.hash
 }
 
+export const sendUSDCToAddress = async (
+  amount: string,
+  recipientAddress: string
+) => {
+  const usdcContract = PH2O__factory.connect(
+    config.usdcAddress,
+    primordialWallet
+  )
+
+  const tx = await usdcContract.transfer(
+    recipientAddress,
+    ethers.parseUnits(amount, 6)
+  )
+  await tx.wait()
+
+  return tx.hash
+}
